@@ -1,0 +1,857 @@
+import React, { useState } from "react";
+import { useQuery, useMutation } from "@apollo/client";
+import { GET_ITEMS, CREATE_ITEM, UPDATE_ITEM, DELETE_ITEM, GET_BACKGROUND, SET_BACKGROUND } from "./graphql";
+import type { InventoryItem, InventoryInput } from "./types";
+import { InventoryForm } from "./components/InventoryForm";
+import { BackgroundUpload } from "./components/BackgroundUpload";
+import { SortControls } from "./components/SortControls";
+import { InventoryCard } from "./components/InventoryCard";
+import { emptyForm, MAX_IMAGE_SIZE, MAX_BACKGROUND_SIZE } from "./constants";
+import { exportToExcel, importFromExcel } from "./utils/excelUtils";
+
+const App: React.FC = () => {
+  const { data, loading, error, refetch } = useQuery(GET_ITEMS, {
+    notifyOnNetworkStatusChange: true,
+    fetchPolicy: 'network-only',
+  });
+  const { data: bgData, refetch: refetchBackground } = useQuery(GET_BACKGROUND);
+  const [createItem] = useMutation(CREATE_ITEM);
+  const [updateItem] = useMutation(UPDATE_ITEM);
+  const [deleteItem] = useMutation(DELETE_ITEM);
+  const [setBackground] = useMutation(SET_BACKGROUND);
+
+  const [form, setForm] = useState<InventoryInput>(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const [importing, setImporting] = useState<boolean>(false);
+  const [sortPrimary, setSortPrimary] = useState<string>("description");
+  const [sortSecondary, setSortSecondary] = useState<string>("");
+  const [sortTertiary, setSortTertiary] = useState<string>("");
+  const [sortPrimaryDir, setSortPrimaryDir] = useState<'asc' | 'desc'>('asc');
+  const [sortSecondaryDir, setSortSecondaryDir] = useState<'asc' | 'desc'>('asc');
+  const [sortTertiaryDir, setSortTertiaryDir] = useState<'asc' | 'desc'>('asc');
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
+    const target = e.target as HTMLInputElement;
+    const { name, value, type } = target;
+    const checked = target.checked;
+    setForm((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value
+    }));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file (JPG, PNG, etc.)");
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      alert("Image size must be less than 5MB");
+      return;
+    }
+
+    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+    
+    if (!form.description) {
+      setForm((prev) => ({ ...prev, description: fileNameWithoutExt }));
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      setForm((prev) => ({ ...prev, image: base64String }));
+      setImagePreview(base64String);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleEdit = (item: InventoryItem) => {
+    setEditingId(item.id);
+    setImagePreview(item.image);
+    setForm({
+      image: item.image,
+      description: item.description,
+      category: item.category,
+      scale: item.scale,
+      manufacturer: item.manufacturer,
+      modelFirstYear: item.modelFirstYear?.toString() ?? "",
+      modelNumber: item.modelNumber ?? "",
+      acquiredFrom: item.acquiredFrom ?? "",
+      acquiredDate: item.acquiredDate ?? "",
+      condition: item.condition ?? "",
+      collectionName: item.collectionName ?? "",
+      storageLocation: item.storageLocation ?? "",
+      originalBox: item.originalBox
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const input = {
+      ...form,
+      modelFirstYear: form.modelFirstYear ? Number(form.modelFirstYear) : null,
+      acquiredDate: form.acquiredDate || null
+    };
+
+    if (editingId) {
+      await updateItem({ variables: { id: editingId, input } });
+    } else {
+      await createItem({ variables: { input } });
+    }
+
+    await refetch();
+    setForm(emptyForm);
+    setEditingId(null);
+    setImagePreview("");
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this item?")) return;
+    await deleteItem({ variables: { id } });
+    await refetch();
+  };
+
+  const handleCancel = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setImagePreview("");
+  };
+
+  const handleClear = () => {
+    setForm(emptyForm);
+    setImagePreview("");
+  };
+
+  const handleExport = async () => {
+    await exportToExcel(items);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const createItemInput = async (input: InventoryInput) => {
+        const mutationInput = {
+          ...input,
+          modelFirstYear: input.modelFirstYear ? Number(input.modelFirstYear) : null,
+          acquiredDate: input.acquiredDate || null
+        };
+        await createItem({ variables: { input: mutationInput } });
+      };
+
+      const { successCount, errorCount } = await importFromExcel(file, createItemInput);
+      await refetch();
+      alert(`Import complete!\nSuccessfully imported: ${successCount}\nErrors: ${errorCount}`);
+    } catch (error) {
+      console.error("Error importing Excel file:", error);
+      alert("Failed to import data. Please ensure the file format is correct.");
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
+  const items: InventoryItem[] = data?.inventoryItems ?? [];
+      const worksheet = workbook.addWorksheet("Inventory");
+
+      // Define columns
+      worksheet.columns = [
+        { header: "Image", key: "image", width: 15 },
+        { header: "Description", key: "description", width: 30 },
+        { header: "Category", key: "category", width: 20 },
+        { header: "Scale", key: "scale", width: 10 },
+        { header: "Manufacturer", key: "manufacturer", width: 20 },
+        { header: "Model First Year", key: "modelFirstYear", width: 15 },
+        { header: "Model Number", key: "modelNumber", width: 20 },
+        { header: "Acquired From", key: "acquiredFrom", width: 25 },
+        { header: "Acquired Date", key: "acquiredDate", width: 15 },
+        { header: "Condition", key: "condition", width: 15 },
+        { header: "Collection Name", key: "collectionName", width: 25 },
+        { header: "Storage Location", key: "storageLocation", width: 25 },
+        { header: "Original Box", key: "originalBox", width: 12 },
+      ];
+
+      // Style header row
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD3D3D3" },
+      };
+
+      // Add data and images
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const rowIndex = i + 2; // +2 because row 1 is header and Excel is 1-indexed
+
+        // Add row data
+        worksheet.addRow({
+          image: "", // Will add image separately
+          description: item.description,
+          category: item.category,
+          scale: item.scale,
+          manufacturer: item.manufacturer,
+          modelFirstYear: item.modelFirstYear || "",
+          modelNumber: item.modelNumber || "",
+          acquiredFrom: item.acquiredFrom || "",
+          acquiredDate: item.acquiredDate || "",
+          condition: item.condition || "",
+          collectionName: item.collectionName || "",
+          storageLocation: item.storageLocation || "",
+          originalBox: item.originalBox ? "Yes" : "No",
+        });
+
+        // Set row height for image
+        worksheet.getRow(rowIndex).height = 80;
+
+        // Add image if available
+        if (item.image) {
+          try {
+            // Extract base64 data
+            const base64Data = item.image.split(",")[1] || item.image;
+            const extension = item.image.match(/image\/(png|jpg|jpeg)/)?.[1] || "png";
+            
+            const imageId = workbook.addImage({
+              base64: base64Data,
+              extension: extension as "png" | "jpeg",
+            });
+
+            worksheet.addImage(imageId, {
+              tl: { col: 0, row: rowIndex - 1 },
+              ext: { width: 100, height: 75 },
+            });
+          } catch (err) {
+            console.error("Error adding image for item", item.id, err);
+          }
+        }
+      }
+
+      // Generate buffer and download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `inventory-${new Date().toISOString().split("T")[0]}.xlsx`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error exporting to Excel:", error);
+      alert("Failed to export data. Please try again.");
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+
+      const worksheet = workbook.getWorksheet("Inventory");
+      if (!worksheet) {
+        alert("Invalid Excel file: 'Inventory' worksheet not found");
+        setImporting(false);
+        return;
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Skip header row (row 1)
+      for (let rowIndex = 2; rowIndex <= worksheet.rowCount; rowIndex++) {
+        const row = worksheet.getRow(rowIndex);
+        
+        // Skip empty rows
+        if (!row.getCell(2).value) continue;
+
+        try {
+          // Extract image from Excel
+          let imageBase64 = "";
+          const images = worksheet.getImages();
+          const imageInRow = images.find((img) => {
+            const range = img.range as any;
+            return range.tl.row === rowIndex - 1; // Excel uses 0-based for image ranges
+          });
+
+          if (imageInRow) {
+            const imageId = imageInRow.imageId;
+            const image = workbook.model.media.find((m) => m.index === imageId);
+            if (image) {
+              const base64 = image.buffer?.toString("base64");
+              const extension = image.extension;
+              imageBase64 = `data:image/${extension};base64,${base64}`;
+            }
+          }
+
+          // If no image found in Excel, use a placeholder or skip
+          if (!imageBase64) {
+            console.warn(`No image found for row ${rowIndex}, skipping item`);
+            errorCount++;
+            continue;
+          }
+
+          const input = {
+            image: imageBase64,
+            description: row.getCell(2).value?.toString() || "",
+            category: row.getCell(3).value?.toString() || "",
+            scale: row.getCell(4).value?.toString() || "",
+            manufacturer: row.getCell(5).value?.toString() || "",
+            modelFirstYear: row.getCell(6).value ? Number(row.getCell(6).value) : null,
+            modelNumber: row.getCell(7).value?.toString() || null,
+            acquiredFrom: row.getCell(8).value?.toString() || null,
+            acquiredDate: row.getCell(9).value?.toString() || null,
+            condition: row.getCell(10).value?.toString() || null,
+            collectionName: row.getCell(11).value?.toString() || null,
+            storageLocation: row.getCell(12).value?.toString() || null,
+            originalBox: row.getCell(13).value?.toString().toLowerCase() === "yes",
+          };
+
+          await createItem({ variables: { input } });
+          successCount++;
+        } catch (error) {
+          console.error(`Error importing row ${rowIndex}:`, error);
+          errorCount++;
+        }
+      }
+
+      await refetch();
+      alert(
+        `Import complete!\nSuccessfully imported: ${successCount}\nErrors: ${errorCount}`
+      );
+    } catch (error) {
+      console.error("Error importing Excel file:", error);
+      alert("Failed to import data. Please ensure the file format is correct.");
+    } finally {
+      setImporting(false);
+      // Reset file input
+      e.target.value = "";
+    }
+  };
+
+  const items: InventoryItem[] = data?.inventoryItems ?? [];
+
+  const backgroundImage = bgData?.background?.image || "";
+
+  const sortedItems = React.useMemo(() => {
+    const itemsCopy = [...items];
+    
+    return itemsCopy.sort((a, b) => {
+      const sortFields = [
+        { field: sortPrimary, dir: sortPrimaryDir },
+        { field: sortSecondary, dir: sortSecondaryDir },
+        { field: sortTertiary, dir: sortTertiaryDir }
+      ].filter(s => s.field);
+      
+      for (const { field, dir } of sortFields) {
+        let aValue = a[field as keyof InventoryItem];
+        let bValue = b[field as keyof InventoryItem];
+        
+        // Handle null/undefined values
+        if (aValue == null && bValue == null) continue;
+        if (aValue == null) return 1;
+        if (bValue == null) return -1;
+        
+        // Convert to strings for comparison (handles dates and numbers)
+        const aStr = String(aValue).toLowerCase();
+        const bStr = String(bValue).toLowerCase();
+        
+        let comparison = 0;
+        if (aStr < bStr) comparison = -1;
+        if (aStr > bStr) comparison = 1;
+        
+        if (comparison !== 0) {
+          return dir === 'asc' ? comparison : -comparison;
+        }
+      }
+      
+      return 0;
+    });
+  }, [items, sortPrimary, sortSecondary, sortTertiary, sortPrimaryDir, sortSecondaryDir, sortTertiaryDir]);
+
+  const getAvailableSortOptions = (currentSelector: 'primary' | 'secondary' | 'tertiary') => {
+    const allOptions = [
+      { value: "description", label: "Description" },
+      { value: "category", label: "Category" },
+      { value: "scale", label: "Scale" },
+      { value: "manufacturer", label: "Manufacturer" },
+      { value: "acquiredDate", label: "Acquired Date" },
+      { value: "created_timestamp", label: "Created Date" },
+      { value: "updated_timestamp", label: "Updated Date" },
+    ];
+
+    const usedValues: string[] = [];
+    if (currentSelector !== 'primary') usedValues.push(sortPrimary);
+    if (currentSelector !== 'secondary' && sortSecondary) usedValues.push(sortSecondary);
+    if (currentSelector !== 'tertiary' && sortTertiary) usedValues.push(sortTertiary);
+
+    return allOptions.filter(option => !usedValues.includes(option.value));
+  };
+
+  const handleSortRefresh = () => {
+    // Force a re-render by toggling a state that triggers the sort
+    refetch();
+  };
+
+  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.match(/image\/(jpg|jpeg|png)/)) {
+      alert("Please select a JPG or PNG image file");
+      e.target.value = "";
+      return;
+    }
+
+    // Validate file size (max 10MB for background)
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Image size must be less than 10MB");
+      e.target.value = "";
+      return;
+    }
+
+    // Check if background already exists
+    const hasExisting = bgData?.background?.image;
+    if (hasExisting) {
+      const confirmed = window.confirm(
+        "A background image already exists. Do you want to replace it with the new image?"
+      );
+      if (!confirmed) {
+        e.target.value = "";
+        return;
+      }
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result as string;
+      try {
+        const result = await setBackground({ variables: { image: base64String } });
+        console.log("Background set result:", result);
+        await refetchBackground();
+        alert("Background image updated successfully!");
+      } catch (error) {
+        console.error("Error setting background:", error);
+        alert(`Failed to set background image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  return (
+    <div className="app-root" style={backgroundImage ? {
+      backgroundImage: `url(${backgroundImage})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundAttachment: 'fixed'
+    } : {}}>
+      <header>
+        <h1>Model Railroad Inventory</h1>
+        <p>Track your locomotives, rolling stock, and accessories.</p>
+      </header>
+
+      <main className="layout">
+        <div className="left-column">
+          <section className="form-section">
+            <h2>{editingId ? "Edit Item" : "Add New Item"}</h2>
+            <form onSubmit={handleSubmit} className="inventory-form">
+              <label>
+                Image (JPG/PNG, max 5MB)
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  required={!editingId && !form.image}
+                />
+                {imagePreview && (
+                  <div className="image-preview">
+                    <img src={imagePreview} alt="Preview" />
+                  </div>
+                )}
+              </label>
+
+            <label>
+              Description
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                required
+              />
+            </label>
+
+            <label>
+              Category
+              <input
+                type="text"
+                name="category"
+                value={form.category}
+                onChange={handleChange}
+                placeholder="Locomotive, Freight Car, Structure, etc."
+                required
+              />
+            </label>
+
+            <label>
+              Scale
+              <input
+                type="text"
+                name="scale"
+                value={form.scale}
+                onChange={handleChange}
+                placeholder="HO, N, O, G, etc."
+                required
+              />
+            </label>
+
+            <label>
+              Manufacturer
+              <input
+                type="text"
+                name="manufacturer"
+                value={form.manufacturer}
+                onChange={handleChange}
+                required
+              />
+            </label>
+
+            <label>
+              Model First Year
+              <input
+                type="number"
+                name="modelFirstYear"
+                value={form.modelFirstYear}
+                onChange={handleChange}
+                placeholder="e.g. 1952"
+              />
+            </label>
+
+            <label>
+              Model Number
+              <input
+                type="text"
+                name="modelNumber"
+                value={form.modelNumber}
+                onChange={handleChange}
+              />
+            </label>
+
+            <label>
+              Acquired From
+              <input
+                type="text"
+                name="acquiredFrom"
+                value={form.acquiredFrom}
+                onChange={handleChange}
+                placeholder="Train show, eBay, hobby shop, etc."
+              />
+            </label>
+
+            <label>
+              Acquired Date
+              <input
+                type="date"
+                name="acquiredDate"
+                value={form.acquiredDate}
+                onChange={handleChange}
+              />
+            </label>
+
+            <label>
+              Condition
+              <input
+                type="text"
+                name="condition"
+                value={form.condition}
+                onChange={handleChange}
+                placeholder="Mint, Excellent, Good, Fair, etc."
+              />
+            </label>
+
+            <label>
+              Collection Name
+              <input
+                type="text"
+                name="collectionName"
+                value={form.collectionName}
+                onChange={handleChange}
+              />
+            </label>
+
+            <label>
+              Storage Location
+              <input
+                type="text"
+                name="storageLocation"
+                value={form.storageLocation}
+                onChange={handleChange}
+                placeholder="Shelf A3, Yard Box 4, etc."
+              />
+            </label>
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                name="originalBox"
+                checked={form.originalBox}
+                onChange={handleChange}
+              />
+              Original Box
+            </label>
+
+            <div className="form-actions">
+              <button type="submit">
+                {editingId ? "Save Changes" : "Add Item"}
+              </button>
+              {editingId ? (
+                <button type="button" onClick={handleCancel} className="secondary">
+                  Cancel
+                </button>
+              ) : (
+                <button type="button" onClick={handleClear} className="secondary">
+                  Clear
+                </button>
+              )}
+            </div>
+          </form>
+        </section>
+
+        <section className="background-section">
+          <h2>Background Upload</h2>
+          <div className="background-upload">
+            <label className="background-upload-label">
+              Select Background Image (JPG/PNG)
+              <input
+                type="file"
+                accept="image/jpeg,image/jpg,image/png"
+                onChange={handleBackgroundUpload}
+              />
+            </label>
+            {backgroundImage && (
+              <div className="background-preview">
+                <p>Current Background:</p>
+                <img src={backgroundImage} alt="Background preview" />
+              </div>
+            )}
+          </div>
+        </section>
+        </div>
+
+        <section className="list-section">
+          <div className="list-header">
+            <h2>Inventory</h2>
+            <div className="list-actions">
+              <label className="import-btn">
+                {importing ? "Importing..." : "Import from Excel"}
+                <input
+                  type="file"
+                  accept=".xlsx"
+                  onChange={handleImport}
+                  disabled={importing}
+                  style={{ display: "none" }}
+                />
+              </label>
+              {items.length > 0 && (
+                <button onClick={handleExport} className="export-btn">
+                  Export to Excel
+                </button>
+              )}
+            </div>
+          </div>
+
+          {items.length > 0 && (
+            <div className="sort-controls">
+              <div className="sort-field">
+                <label>
+                  Primary Sort:
+                  <div className="sort-input-group">
+                    <select value={sortPrimary} onChange={(e) => setSortPrimary(e.target.value)}>
+                      {getAvailableSortOptions('primary').map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="sort-direction-btn"
+                      onClick={() => setSortPrimaryDir(sortPrimaryDir === 'asc' ? 'desc' : 'asc')}
+                      title={sortPrimaryDir === 'asc' ? 'Ascending' : 'Descending'}
+                    >
+                      {sortPrimaryDir === 'asc' ? '↑' : '↓'}
+                    </button>
+                  </div>
+                </label>
+              </div>
+              <div className="sort-field">
+                <label>
+                  Secondary Sort:
+                  <div className="sort-input-group">
+                    <select value={sortSecondary} onChange={(e) => setSortSecondary(e.target.value)}>
+                      <option value="">None</option>
+                      {getAvailableSortOptions('secondary').map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    {sortSecondary && (
+                      <button
+                        type="button"
+                        className="sort-direction-btn"
+                        onClick={() => setSortSecondaryDir(sortSecondaryDir === 'asc' ? 'desc' : 'asc')}
+                        title={sortSecondaryDir === 'asc' ? 'Ascending' : 'Descending'}
+                      >
+                        {sortSecondaryDir === 'asc' ? '↑' : '↓'}
+                      </button>
+                    )}
+                  </div>
+                </label>
+              </div>
+              <div className="sort-field">
+                <label>
+                  Tertiary Sort:
+                  <div className="sort-input-group">
+                    <select value={sortTertiary} onChange={(e) => setSortTertiary(e.target.value)}>
+                      <option value="">None</option>
+                      {getAvailableSortOptions('tertiary').map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    {sortTertiary && (
+                      <button
+                        type="button"
+                        className="sort-direction-btn"
+                        onClick={() => setSortTertiaryDir(sortTertiaryDir === 'asc' ? 'desc' : 'asc')}
+                        title={sortTertiaryDir === 'asc' ? 'Ascending' : 'Descending'}
+                      >
+                        {sortTertiaryDir === 'asc' ? '↑' : '↓'}
+                      </button>
+                    )}
+                  </div>
+                </label>
+              </div>
+              <div className="sort-actions">
+                <button onClick={handleSortRefresh} className="refresh-btn" title="Refresh display">
+                  ↻ Refresh
+                </button>
+              </div>
+            </div>
+          )}
+
+          {loading && <p>Loading...</p>}
+          {error && <p>Error: {error.message}</p>}
+          {!loading && items.length === 0 && <p>No items yet. Add your first locomotive!</p>}
+
+          <div className="inventory-grid">
+            {sortedItems.map((item) => (
+              <article key={item.id} className="inventory-card">
+                <div className="image-wrapper">
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt={item.description}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="placeholder-image">No Image</div>
+                  )}
+                </div>
+                <div className="card-body">
+                  <h3>{item.description}</h3>
+                  <p className="muted">
+                    {item.scale} • {item.category} • {item.manufacturer}
+                  </p>
+                  <dl>
+                    {item.modelNumber && (
+                      <>
+                        <dt>Model #</dt>
+                        <dd>{item.modelNumber}</dd>
+                      </>
+                    )}
+                    {item.modelFirstYear && (
+                      <>
+                        <dt>First Year</dt>
+                        <dd>{item.modelFirstYear}</dd>
+                      </>
+                    )}
+                    {item.collectionName && (
+                      <>
+                        <dt>Collection</dt>
+                        <dd>{item.collectionName}</dd>
+                      </>
+                    )}
+                    {item.storageLocation && (
+                      <>
+                        <dt>Storage</dt>
+                        <dd>{item.storageLocation}</dd>
+                      </>
+                    )}
+                    {item.condition && (
+                      <>
+                        <dt>Condition</dt>
+                        <dd>{item.condition}</dd>
+                      </>
+                    )}
+                    {item.acquiredFrom && (
+                      <>
+                        <dt>Acquired From</dt>
+                        <dd>{item.acquiredFrom}</dd>
+                      </>
+                    )}
+                    {item.acquiredDate && (
+                      <>
+                        <dt>Acquired Date</dt>
+                        <dd>{(() => {
+                          const date = new Date(item.acquiredDate);
+                          return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+                        })()}</dd>
+                      </>
+                    )}
+                    <dt>Original Box</dt>
+                    <dd>{item.originalBox ? "Yes" : "No"}</dd>
+                    <dt>Last Updated</dt>
+                    <dd>{(() => {
+                      const date = new Date(item.updated_timestamp);
+                      const dateStr = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+                      const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                      return `${dateStr} ${timeStr}`;
+                    })()}</dd>
+                  </dl>
+
+                  <div className="card-actions">
+                    <button onClick={() => handleEdit(item)}>Edit</button>
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="danger"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+};
+
+export default App;

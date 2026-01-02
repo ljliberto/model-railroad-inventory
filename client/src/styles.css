@@ -1,0 +1,475 @@
+/* Ensure checkbox-row is horizontal and does not wrap */
+.inventory-form label.checkbox-row {
+  flex-direction: row !important;
+  align-items: center;
+  white-space: nowrap;
+}
+/* Wrapper for PRR logo watermark */
+.inventory-heading-wrapper {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.inventory-heading-wrapper::before {
+  content: "";
+  position: absolute;
+  top: 65%; /* Move logo down */
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 165px; /* Shrunk by 25% */
+  height: 165px;
+  background-image: url('/prr-logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.32; /* Even darker */
+  z-index: 0;
+}
+
+/* Old English font for heading */
+.inventory-heading {
+  position: relative;
+  z-index: 1;
+  font-family: 'UnifrakturCook', 'Georgia', 'Times New Roman', serif;
+}
+/* Heading style for Model Railroad Inventory */
+.inventory-heading {
+  font-size: 4rem;
+  color: #7c2128; /* PRR Burgundy */
+  -webkit-text-stroke: 3.5px gold;
+  text-stroke: 3px gold;
+  font-weight: 1000;
+  text-align: center;
+  margin-top: 2rem;
+  text-shadow:
+    0 0 4px #7c2128,
+    0 0 8px #7c2128,
+    0 0 12px #7c2128,
+    0 0 16px #7c2128;
+}
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #111827;
+}
+
+body {
+  margin: 0;
+  background-color: #f3f4f6;
+}
+
+.app-root {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  min-height: 100vh;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+header p {
+  margin-top: 0.25rem;
+  color: #7c2128; /* PRR Burgundy */
+  font-size: 2rem;
+  font-weight: bold;
+  -webkit-text-stroke: 2px gold;
+  text-stroke: 2px gold;
+  text-align: center;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr);
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.left-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: sticky;
+  top: 1.5rem;
+  align-self: start;
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.left-column::-webkit-scrollbar {
+  width: 8px;
+}
+
+.left-column::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.left-column::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+
+.left-column::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  
+  .left-column {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    order: 1;
+  }
+}
+
+section {
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.08);
+}
+
+.background-section {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.background-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.background-upload-label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.875rem;
+  color: #374151;
+  gap: 0.5rem;
+}
+
+.background-upload-label input[type="file"] {
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.9rem;
+  background-color: rgba(255, 255, 255, 0.7);
+}
+
+.background-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.background-preview p {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.background-preview img {
+  max-width: 100%;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+}
+
+section h2 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.inventory-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.inventory-form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.inventory-form input,
+.inventory-form textarea,
+.inventory-form select {
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.9rem;
+}
+
+.inventory-form textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox-row input[type="checkbox"] {
+  margin-top: 0;
+}
+
+.image-preview {
+  margin-top: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  max-width: 300px;
+}
+
+.image-preview img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+button {
+  border-radius: 0.5rem;
+  border: none;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background-color: #2563eb;
+  color: white;
+}
+
+button.secondary {
+  background-color: #6b7280;
+}
+
+button.danger {
+  background-color: #dc2626;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.list-section {
+  overflow: hidden;
+}
+
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.list-header h2 {
+  margin: 0;
+}
+
+.list-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.import-btn {
+  background-color: #2563eb;
+  color: white;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+  display: inline-block;
+}
+
+.import-btn:hover {
+  opacity: 0.9;
+}
+
+.export-btn {
+  background-color: #059669;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.8rem;
+}
+
+.export-btn:hover {
+  background-color: #047857;
+}
+
+.sort-controls {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: rgba(249, 250, 251, 0.5);
+  border-radius: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sort-field {
+  flex: 1;
+  min-width: 150px;
+}
+
+.sort-field label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #374151;
+  gap: 0.25rem;
+}
+
+.sort-input-group {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.sort-field select {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.375rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.875rem;
+  background-color: rgba(255, 255, 255, 0.7);
+}
+
+.sort-direction-btn {
+  padding: 0.4rem 0.6rem;
+  min-width: 2rem;
+  font-size: 1rem;
+  background-color: rgba(243, 244, 246, 0.7);
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.sort-direction-btn:hover {
+  background-color: rgba(229, 231, 235, 0.8);
+  opacity: 1;
+}
+
+.sort-actions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.refresh-btn {
+  background-color: #6b7280;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.refresh-btn:hover {
+  background-color: #4b5563;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.inventory-card {
+  background-color: rgba(249, 250, 251, 0.7);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+}
+
+.image-wrapper {
+  width: 100%;
+  padding-top: 56.25%;
+  position: relative;
+  background: linear-gradient(135deg, #d1fae5, #bfdbfe);
+}
+
+.image-wrapper img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.placeholder-image {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.card-body {
+  padding: 0.75rem 0.8rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background-color: transparent;
+}
+
+.card-body h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.muted {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+dl {
+  margin: 0.25rem 0 0.5rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.75rem;
+  row-gap: 0.1rem;
+  font-size: 0.8rem;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+}
+
+.card-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
