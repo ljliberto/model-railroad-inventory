@@ -193,115 +193,6 @@ const App: React.FC = () => {
     setImagePreview("");
   };
 
-  const handleExport = async () => {
-    if (!sortedItems || sortedItems.length === 0) {
-      alert("No data to export");
-      return;
-    }
-
-    try {
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Inventory");
-
-      // Define columns
-      worksheet.columns = [
-        { header: "Image", key: "image", width: 15 },
-        { header: "Description", key: "description", width: 30 },
-        { header: "Category", key: "category", width: 20 },
-        { header: "Scale", key: "scale", width: 10 },
-        { header: "Manufacturer", key: "manufacturer", width: 20 },
-        { header: "Model First Year", key: "modelFirstYear", width: 15 },
-        { header: "Model Number", key: "modelNumber", width: 20 },
-        { header: "Acquired From", key: "acquiredFrom", width: 25 },
-        { header: "Acquired Date", key: "acquiredDate", width: 15 },
-        { header: "Condition", key: "condition", width: 15 },
-        { header: "Collection Name", key: "collectionName", width: 25 },
-        { header: "Storage Location", key: "storageLocation", width: 25 },
-        { header: "Variation", key: "variation", width: 25 },
-        { header: "Original Box", key: "originalBox", width: 12 },
-        { header: "Original Value", key: "originalValue", width: 15 },
-        { header: "Estimated Value", key: "estimatedValue", width: 15 },
-      ];
-
-      // Style header row
-      worksheet.getRow(1).font = { bold: true };
-      worksheet.getRow(1).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFD3D3D3" },
-      };
-
-      // Freeze the header row (first row stays visible when scrolling)
-      worksheet.views = [
-        { state: "frozen", xSplit: 0, ySplit: 1 }
-      ];
-
-      // Add data and images
-      for (let i = 0; i < sortedItems.length; i++) {
-        const item = sortedItems[i];
-        const rowIndex = i + 2; // +2 because row 1 is header and Excel is 1-indexed
-
-        // Add row data
-        worksheet.addRow({
-          image: "", // Will add image separately
-          description: item.description,
-          category: item.category,
-          scale: item.scale,
-          manufacturer: item.manufacturer,
-          modelFirstYear: item.modelFirstYear || "",
-          modelNumber: item.modelNumber || "",
-          acquiredFrom: item.acquiredFrom || "",
-          acquiredDate: item.acquiredDate || "",
-          condition: item.condition || "",
-          collectionName: item.collectionName || "",
-          variation: item.variation || "",
-          originalBox: item.originalBox ? "Yes" : "No",
-          originalValue: item.originalValue || "",
-          estimatedValue: item.estimatedValue || "",
-        });
-
-        // Set row height for image
-        worksheet.getRow(rowIndex).height = 80;
-
-        // Add image if available
-        if (item.image) {
-          try {
-            // Extract base64 data
-            const base64Data = item.image.split(",")[1] || item.image;
-            const extension = item.image.match(/image\/(png|jpg|jpeg)/)?.[1] || "png";
-            
-            const imageId = workbook.addImage({
-              base64: base64Data,
-              extension: extension as "png" | "jpeg",
-            });
-
-            worksheet.addImage(imageId, {
-              tl: { col: 0, row: rowIndex - 1 },
-              ext: { width: 100, height: 75 },
-            });
-          } catch (err) {
-            console.error("Error adding image for item", item.id, err);
-          }
-        }
-      }
-
-      // Generate buffer and download
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `ModelRailroadInventory-${new Date().toISOString().split("T")[0]}.xlsx`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Error exporting to Excel:", error);
-      alert("Failed to export data. Please try again.");
-    }
-  };
-
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -605,6 +496,302 @@ const App: React.FC = () => {
   const [showManufacturerManager, setShowManufacturerManager] = useReactState(false);
   const [showCategoryManager, setShowCategoryManager] = useReactState(false);
   const [showBackgroundManager, setShowBackgroundManager] = useReactState(false);
+
+  // Google Drive integration state
+  const [isGoogleApiLoaded, setIsGoogleApiLoaded] = useState(false);
+  const [isPickerApiLoaded, setIsPickerApiLoaded] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  // Google Drive API configuration
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
+  const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+  // Initialize Google API (new GIS library)
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_API_KEY) {
+      console.warn('Google Drive integration not configured. Set VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_API_KEY environment variables.');
+      return;
+    }
+
+    // Load Google API Picker
+    const loadGooglePicker = () => {
+      const script = document.createElement('script');
+      script.src = 'https://apis.google.com/js/api.js';
+      script.onload = () => {
+        (window as any).gapi.load('picker', () => {
+          console.log('✅ Google Picker API loaded');
+          setIsPickerApiLoaded(true);
+        });
+      };
+      document.body.appendChild(script);
+    };
+
+    // Load Google Identity Services
+    const loadGoogleIdentity = () => {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.onload = () => {
+        console.log('✅ Google Identity Services loaded');
+        setIsGoogleApiLoaded(true);
+      };
+      document.body.appendChild(script);
+    };
+
+    loadGooglePicker();
+    loadGoogleIdentity();
+  }, [GOOGLE_CLIENT_ID, GOOGLE_API_KEY]);
+
+  // Request Google Sign In with new GIS library
+  const requestGoogleSignIn = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: SCOPES,
+        callback: (response: any) => {
+          if (response.error) {
+            reject(response);
+            return;
+          }
+          setAccessToken(response.access_token);
+          resolve(response.access_token);
+        },
+      });
+      client.requestAccessToken();
+    });
+  };
+
+  // Generate Excel workbook (shared logic)
+  const generateExcelWorkbook = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Inventory');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'Image', key: 'image', width: 15 },
+      { header: 'Description', key: 'description', width: 30 },
+      { header: 'Category', key: 'category', width: 20 },
+      { header: 'Scale', key: 'scale', width: 10 },
+      { header: 'Manufacturer', key: 'manufacturer', width: 20 },
+      { header: 'Model First Year', key: 'modelFirstYear', width: 15 },
+      { header: 'Model Number', key: 'modelNumber', width: 20 },
+      { header: 'Acquired From', key: 'acquiredFrom', width: 25 },
+      { header: 'Acquired Date', key: 'acquiredDate', width: 15 },
+      { header: 'Condition', key: 'condition', width: 15 },
+      { header: 'Collection Name', key: 'collectionName', width: 25 },
+      { header: 'Storage Location', key: 'storageLocation', width: 25 },
+      { header: 'Variation', key: 'variation', width: 25 },
+      { header: 'Original Box', key: 'originalBox', width: 12 },
+      { header: 'Original Value', key: 'originalValue', width: 15 },
+      { header: 'Estimated Value', key: 'estimatedValue', width: 15 },
+    ];
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFD3D3D3' },
+    };
+
+    // Freeze the header row
+    worksheet.views = [
+      { state: 'frozen', xSplit: 0, ySplit: 1 }
+    ];
+
+    // Add data and images
+    for (let i = 0; i < sortedItems.length; i++) {
+      const item = sortedItems[i];
+      const rowIndex = i + 2;
+
+      worksheet.addRow({
+        image: '',
+        description: item.description,
+        category: item.category,
+        scale: item.scale,
+        manufacturer: item.manufacturer,
+        modelFirstYear: item.modelFirstYear || '',
+        modelNumber: item.modelNumber || '',
+        acquiredFrom: item.acquiredFrom || '',
+        acquiredDate: item.acquiredDate || '',
+        condition: item.condition || '',
+        collectionName: item.collectionName || '',
+        storageLocation: item.storageLocation || '',
+        variation: item.variation || '',
+        originalBox: item.originalBox ? 'Yes' : 'No',
+        originalValue: item.originalValue || '',
+        estimatedValue: item.estimatedValue || '',
+      });
+
+      worksheet.getRow(rowIndex).height = 80;
+
+      if (item.image) {
+        try {
+          const base64Data = item.image.split(',')[1] || item.image;
+          const extension = item.image.match(/image\/(png|jpg|jpeg)/)?.[1] || 'png';
+          
+          const imageId = workbook.addImage({
+            base64: base64Data,
+            extension: extension as 'png' | 'jpeg',
+          });
+
+          worksheet.addImage(imageId, {
+            tl: { col: 0, row: rowIndex - 1 },
+            ext: { width: 100, height: 75 },
+          });
+        } catch (err) {
+          console.error('Error adding image for item', item.id, err);
+        }
+      }
+    }
+
+    return workbook;
+  };
+
+  // Export to current device (download)
+  const handleExportToDevice = async () => {
+    try {
+      const workbook = await generateExcelWorkbook();
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ModelRailroadInventory-${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Error exporting to device:', error);
+      alert('Failed to export data. Please try again.');
+    }
+  };
+
+  // Upload to Google Drive with folder picker
+  const handleExportToDrive = async () => {
+    setShowExportModal(false);
+    setIsUploadingToDrive(true);
+
+    try {
+      // Check if Picker API is loaded
+      if (!isPickerApiLoaded) {
+        alert('Google Picker is still loading. Please wait a moment and try again.');
+        setIsUploadingToDrive(false);
+        return;
+      }
+
+      // Get access token (request sign-in if needed)
+      let token = accessToken;
+      if (!token) {
+        try {
+          token = await requestGoogleSignIn();
+        } catch (error) {
+          console.error('Sign-in error:', error);
+          setIsUploadingToDrive(false);
+          return; // User cancelled sign-in
+        }
+      }
+
+      console.log('✅ Access token obtained, generating Excel file...');
+
+      // Generate Excel file
+      const workbook = await generateExcelWorkbook();
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const fileName = `ModelRailroadInventory-${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      console.log('✅ Excel file generated, opening folder picker...');
+      console.log('Picker API available:', !!(window as any).google?.picker);
+
+      // Verify google.picker is available
+      if (!(window as any).google?.picker) {
+        alert('Google Picker API is not loaded. Please refresh the page and try again.');
+        setIsUploadingToDrive(false);
+        return;
+      }
+
+      // Show folder picker
+      const docsView = new (window as any).google.picker.DocsView((window as any).google.picker.ViewId.FOLDERS)
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(true)
+        .setMimeTypes('application/vnd.google-apps.folder');
+
+      const picker = new (window as any).google.picker.PickerBuilder()
+        .setTitle('Select a folder to save your inventory')
+        .addView(docsView)
+        .setOAuthToken(token)
+        .setDeveloperKey(GOOGLE_API_KEY)
+        .setCallback(async (data: any) => {
+          console.log('Picker callback triggered:', data.action);
+          if (data.action === (window as any).google.picker.Action.PICKED) {
+            const folderId = data.docs[0].id;
+            console.log('Folder selected:', folderId);
+            
+            try {
+              // Upload to selected folder
+              const metadata = {
+                name: fileName,
+                mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                parents: [folderId],
+              };
+
+              const form = new FormData();
+              form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+              form.append('file', blob);
+
+              const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                },
+                body: form,
+              });
+
+              if (response.ok) {
+                const result = await response.json();
+                alert(`File successfully uploaded to Google Drive!\nFile: ${fileName}`);
+              } else {
+                const error = await response.text();
+                console.error('Upload error:', error);
+                alert('Failed to upload to Google Drive. Please try again.');
+              }
+            } catch (uploadError) {
+              console.error('Error uploading file:', uploadError);
+              alert('Failed to upload to Google Drive. Please try again.');
+            } finally {
+              setIsUploadingToDrive(false);
+            }
+          } else if (data.action === (window as any).google.picker.Action.CANCEL) {
+            console.log('User cancelled folder selection');
+            setIsUploadingToDrive(false);
+          }
+        })
+        .build();
+      
+      console.log('✅ Picker created, showing dialog...');
+      picker.setVisible(true);
+      console.log('✅ Picker.setVisible() called');
+    } catch (error) {
+      console.error('Error exporting to Google Drive:', error);
+      alert('Failed to export to Google Drive. Please try again.');
+      setIsUploadingToDrive(false);
+    }
+  };
+
+  // Main export handler - shows modal to choose destination
+  const handleExport = () => {
+    if (!sortedItems || sortedItems.length === 0) {
+      alert('No data to export');
+      return;
+    }
+    setShowExportModal(true);
+  };
 
   return (
     <div className="app-root" style={backgroundImage ? {
@@ -975,8 +1162,8 @@ const App: React.FC = () => {
                 />
               </label>
               {items.length > 0 && (
-                <button onClick={handleExport} className="export-btn">
-                  Export to Excel
+                <button onClick={handleExport} className="export-btn" disabled={isUploadingToDrive}>
+                  {isUploadingToDrive ? 'Uploading...' : 'Export to Excel'}
                 </button>
               )}
             </div>
@@ -1321,6 +1508,102 @@ const App: React.FC = () => {
               }}
               onClick={(e) => e.stopPropagation()}
             />
+          </div>
+        </div>
+      )}
+
+      {showExportModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => setShowExportModal(false)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              padding: '32px',
+              borderRadius: '8px',
+              maxWidth: '500px',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Export Inventory</h2>
+            <p style={{ marginBottom: '24px', color: '#666' }}>
+              Choose where you would like to export your inventory:
+            </p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button
+                onClick={handleExportToDevice}
+                className="export-btn"
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  fontSize: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span>💾</span>
+                Export to this Device
+              </button>
+              
+              {isGoogleApiLoaded ? (
+                <button
+                  onClick={handleExportToDrive}
+                  className="export-btn"
+                  disabled={isUploadingToDrive}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    fontSize: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <span>☁️</span>
+                  {isUploadingToDrive ? 'Uploading to Google Drive...' : 'Export to Google Drive'}
+                </button>
+              ) : (
+                <div style={{ 
+                  padding: '16px', 
+                  background: '#f5f5f5', 
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  color: '#666',
+                  fontSize: '14px',
+                }}>
+                  Google Drive export not configured
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowExportModal(false)}
+              className="secondary"
+              style={{
+                width: '100%',
+                marginTop: '16px',
+                padding: '12px',
+              }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
