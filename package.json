@@ -10,7 +10,7 @@
     "dev": "concurrently \"yarn workspace model-railroad-inventory-server dev\" \"yarn workspace model-railroad-inventory-client dev\"",
     "debug": "concurrently \"yarn workspace model-railroad-inventory-server debug\" \"yarn workspace model-railroad-inventory-client dev\" \"node wait-and-open.js\"",
     "build": "yarn workspace model-railroad-inventory-server build && yarn workspace model-railroad-inventory-client build",
-    "test": "yarn workspace model-railroad-inventory-client test"
+    "test": "yarn workspace model-railroad-inventory-client test && yarn workspace model-railroad-inventory-server test"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

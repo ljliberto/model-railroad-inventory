@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useQuery, useMutation } from "@apollo/client";
+import { gql, useQuery, useMutation } from "@apollo/client";
 import { GET_MANUFACTURERS, CREATE_MANUFACTURER, UPDATE_MANUFACTURER, DELETE_MANUFACTURER } from "./graphql";
 
 const ManufacturerManager: React.FC = () => {
